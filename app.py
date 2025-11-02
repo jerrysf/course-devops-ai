@@ -1,47 +1,61 @@
 import os
 from fastapi import FastAPI
 from pydantic import BaseModel
-from langchain_core.prompts import PromptTemplate
-from langchain.chains import RetrievalQA
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
 from langchain_community.vectorstores import FAISS
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 
-# 1. 检查 API Key
-# 在 AWS App Runner 中，这将由 AWS Secrets Manager 安全注入
+# 1. Check API Key - warn if not set but don't fail immediately
+# In AWS App Runner, this will be injected by AWS Secrets Manager
 if "OPENAI_API_KEY" not in os.environ:
-    raise EnvironmentError("OPENAI_API_KEY environment variable not set.")
+    print("⚠️  WARNING: OPENAI_API_KEY environment variable not set. Chat functionality will fail.")
+else:
+    print("✅ OPENAI_API_KEY is set")
 
-# --- 应用启动时：加载模型和向量 ---
-print("Loading RAG model and vector store...")
-embeddings = OpenAIEmbeddings()
-vectorstore = FAISS.load_local(
-    "faiss_index", 
-    embeddings, 
-    # 兼容最新版 LangChain
-    allow_dangerous_deserialization=True 
-)
-retriever = vectorstore.as_retriever()
+# --- Lazy loading: Initialize RAG components on first use ---
+rag_chain = None
 
-# RAG 的 Prompt 模板
-prompt_template = """Use the following pieces of context to answer the question.
+def get_rag_chain():
+    global rag_chain
+    if rag_chain is None:
+        print("Loading RAG model and vector store...")
+        embeddings = OpenAIEmbeddings()
+        vectorstore = FAISS.load_local(
+            "faiss_index", 
+            embeddings, 
+            allow_dangerous_deserialization=True 
+        )
+        retriever = vectorstore.as_retriever()
+        
+        # RAG Prompt template
+        template = """Use the following pieces of context to answer the question.
 If you don't know the answer, just say that you don't know, don't try to make up an answer.
+
 Context: {context}
+
 Question: {question}
-Helpful Answer:"""
-QA_PROMPT = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
 
-# LLM 模型
-llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0)
-
-# RAG Chain
-rag_chain = RetrievalQA.from_chain_type(
-    llm=llm,
-    chain_type="stuff",
-    retriever=retriever,
-    chain_type_kwargs={"prompt": QA_PROMPT}
-)
-print("✅ RAG Application is ready.")
-# --- 加载完成 ---
+Helpful Answer: V2"""
+        
+        prompt = ChatPromptTemplate.from_template(template)
+        
+        # LLM model
+        llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0)
+        
+        # RAG Chain using LCEL
+        def format_docs(docs):
+            return "\n\n".join([d.page_content for d in docs])
+        
+        rag_chain = (
+            {"context": retriever | format_docs, "question": RunnablePassthrough()}
+            | prompt
+            | llm
+            | StrOutputParser()
+        )
+        print("✅ RAG Application is ready.")
+    return rag_chain
 
 app = FastAPI()
 
@@ -55,9 +69,10 @@ def read_root():
 @app.post("/chat")
 def chat(query: Query):
     try:
-        # 调用 RAG chain
-        result = rag_chain.invoke({"query": query.question})
-        return {"answer": result['result']}
+        # Lazy load RAG chain on first use
+        chain = get_rag_chain()
+        answer = chain.invoke(query.question)
+        return {"answer": answer}
     except Exception as e:
-        # 返回错误信息
+        # Return error message
         return {"error": str(e)}, 500
