@@ -1,0 +1,66 @@
+name: Deploy RAG App to AWS App Runner
+
+# 触发器：当推送到 main 分支时
+on:
+  push:
+    branches:
+      - main
+
+# 环境变量：从 GitHub Secrets 读取
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+  APP_RUNNER_ARN: ${{ secrets.APP_RUNNER_ARN }}
+  AWS_IAM_ROLE: ${{ secrets.AWS_IAM_ROLE_TO_ASSUME }}
+
+# 权限：允许 workflow 从 OIDC 获取身份 token
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-and-deploy:
+    name: Build, Push to ECR, and Deploy to App Runner
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. 检出代码
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. 配置 AWS 凭证 (使用 OIDC，无需 Access Key)
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_IAM_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # 3. 登录到 ECR
+      - name: Log in to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 4. 定义镜像标签 (使用 GitHub SHA)
+      - name: Define Image Tag
+        id: image-tag
+        run: echo "TAG=$(echo $GITHUB_SHA | cut -c1-7)" >> $GITHUB_ENV
+
+      # 5. 构建并推送 Docker 镜像
+      - name: Build and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ env.TAG }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+      # 6. 部署到 App Runner
+      - name: Deploy to App Runner
+        uses: aws-actions/amazon-apprunner-deploy@v1
+        with:
+          service: ${{ env.APP_RUNNER_ARN }}
+          image: ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.TAG }}
+          wait-for-service-stability: 'true' # 等待部署完成
+          
+      - name: Deployment Complete
+        run: echo "✅ Deployment to App Runner successful!"
