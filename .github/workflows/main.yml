@@ -94,8 +94,8 @@ jobs:
           access-role-arn: ${{ env.APP_RUNNER_ACCESS_ROLE_ARN }}
           instance-role-arn: ${{ env.APP_RUNNER_INSTANCE_ROLE_ARN }}
           port: 8080
-          cpu: 1024
-          memory: 2048
+          cpu: 1
+          memory: 2
           wait-for-service-stability-seconds: 600
           
       - name: Deployment Complete
