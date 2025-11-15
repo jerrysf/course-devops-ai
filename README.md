@@ -1,6 +1,18 @@
 # RAG App — GitHub Actions 部署到 AWS App Runner
 
 本项目使用 GitHub Actions 在推送到 `main` 分支时自动构建 Docker 镜像并部署到 AWS App Runner。
+## 用 Terraform 创建所需 AWS环境
+```
+# 创建ECR, Secret Manager
+TF_VAR_manage_apprunner_via_terraform=true TF_VAR_github_org_or_user=<github_user_name> TF_VAR_github_repo_name=<github_repo_name> TF_VAR_openai_api_key="<YOUR_OPENAI_KEY>" terraform apply -auto-approve
+
+# 本地构建Docker镜像推送到ECR (ECR来自于上面命令的输出)
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 531397997975.dkr.ecr.us-east-1.amazonaws.com && docker build --platform linux/amd64 -t 531397997975.dkr.ecr.us-east-1.amazonaws.com/bee-edu-rag-app:latest . && docker push 531397997975.dkr.ecr.us-east-1.amazonaws.com/bee-edu-rag-app:latest 
+
+# 创建App Runner Service
+TF_VAR_manage_apprunner_via_terraform=true TF_VAR_github_org_or_user=<github_user_name> TF_VAR_github_repo_name=<github_repo_name> TF_VAR_openai_api_key="<YOUR_OPENAI_KEY>" terraform apply -auto-approve
+```
+
 
 ## 工作流概览（`.github/workflows/main.yml`）
 - 触发条件：`push` 到 `main`。
