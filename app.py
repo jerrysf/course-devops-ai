@@ -42,7 +42,12 @@ Helpful Answer: """
         prompt = ChatPromptTemplate.from_template(template)
         
         # LLM model
-        llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0)
+        llm = ChatOpenAI(
+            model_name="moonshot-v1-8k",  # 或者其他Moonshot模型，如 moonshot-v1-32k, moonshot-v1-128k
+            temperature=0,
+            openai_api_base="https://api.moonshot.cn/v1",  # 添加Moonshot的API地址
+            openai_api_key=os.environ.get("OPENAI_API_KEY")  # 使用新的环境变量
+            )
         
         # RAG Chain using LCEL
         def format_docs(docs):
