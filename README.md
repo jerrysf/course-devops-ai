@@ -1,8 +1,11 @@
 # RAG App — GitHub Actions 部署到 AWS App Runner
 
 本项目使用 GitHub Actions 在推送到 `main` 分支时自动构建 Docker 镜像并部署到 AWS App Runner。
-## 用 Terraform 创建所需 AWS环境
+## 用 Terraform 创建所需 AWS环境 (请在命令行依次运行如下命令，必须按照下面给出的顺序)
 ```
+# 配置 AWS 访问
+aws configure
+
 # 创建ECR, Secret Manager
 TF_VAR_manage_apprunner_via_terraform=true TF_VAR_github_org_or_user=<github_user_name> TF_VAR_github_repo_name=<github_repo_name> TF_VAR_openai_api_key="<YOUR_OPENAI_KEY>" terraform apply -auto-approve
 
